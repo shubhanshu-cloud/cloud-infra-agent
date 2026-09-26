@@ -6,7 +6,7 @@ policies.yaml and compare against the ceiling there.
 
 Three things this tool is careful about (each one is a way a cost check quietly lies):
 
-1. FAIL CLOSED, as in scan_tools: a missing binary, missing API key, timeout or unreadable
+1. FAIL CLOSED, as in scan_tools: a missing binary, missing credentials, timeout or unreadable
    output is "ESTIMATE UNAVAILABLE", never "₹0". Zero looks like a pass.
 
 2. USAGE-BASED RESOURCES. An S3 bucket costs nothing until you store things in it, so
@@ -34,7 +34,7 @@ from langchain_core.tools import tool
 
 from cloud_infra_agent.loader import DEFAULT_KB_DIR
 
-load_dotenv()  # INFRACOST_API_KEY comes from .env; also works when run standalone
+load_dotenv()  # load local environment configuration
 
 INFRACOST_TIMEOUT = 120
 MAX_SHOWN = 5
@@ -94,7 +94,7 @@ def run_estimate(hcl: str) -> dict:
     if not shutil.which("infracost"):
         return unavailable("infracost not found on PATH")
     if not os.environ.get("INFRACOST_API_KEY"):
-        return unavailable("INFRACOST_API_KEY is not set (check your .env)")
+        return unavailable("Infracost is not configured (API key missing)")
 
     env = {**os.environ, "INFRACOST_SKIP_UPDATE_CHECK": "true"}
     with tempfile.TemporaryDirectory() as workdir:

@@ -13,7 +13,7 @@ WHY this step exists (RAG concept: chunking):
       - standards.md   -> ONE chunk per "## " heading (Tagging, Naming, Regions, ...).
                           Headings already mark topic boundaries, so we reuse them.
 
-    Nothing here is AI. It is plain string handling. The AI starts in the next step.
+    This module is plain string handling; embedding happens in store.py.
 """
 
 from dataclasses import dataclass

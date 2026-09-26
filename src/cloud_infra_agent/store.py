@@ -9,7 +9,7 @@ Three jobs, in the order they happen:
              back the stored full text.
 
 Note who does what: the embedding model only makes fingerprints. It never returns text.
-Chroma does the comparing and returns the "book" we stored next to each fingerprint.
+Chroma does the comparing and returns the full text stored next to each vector.
 """
 
 from pathlib import Path
@@ -58,9 +58,9 @@ def build_index() -> int:
         raise RuntimeError("No module chunks found. Is kb/modules/ populated?")
 
     collection = _get_collection(reset=True)
-    # EMBED the short card...
+    # EMBED the short search text...
     vectors = _get_model().encode([c.search_text for c in chunks]).tolist()
-    # ...but STORE the full book next to it (documents=).
+    # ...but STORE the full text next to it (documents=).
     collection.add(
         ids=[c.id for c in chunks],
         embeddings=vectors,
@@ -71,7 +71,7 @@ def build_index() -> int:
 
 
 def ensure_index() -> None:
-    """Build the index only if it doesn't exist yet. Note: if you edit files in kb/,
+    """Build the index only if it doesn't exist yet. Note: if files in kb/ change,
     rebuild with `uv run python -m cloud_infra_agent.store` (this check can't see edits)."""
     if _get_collection().count() == 0:
         build_index()

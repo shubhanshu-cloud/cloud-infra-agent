@@ -105,4 +105,4 @@ output "bucket_id" {
 ## Notes for the agent
 - Adjust `purpose` from the request (e.g. "audit-logs").
 - Add KMS encryption only if the request explicitly asks for customer-managed keys (adds cost).
-- Checkov may flag missing access logging and cross-region replication; these are acceptable for dev unless the request says otherwise.c
+- Checkov may flag missing access logging and cross-region replication; these are acceptable for dev unless the request says otherwise.

@@ -31,16 +31,19 @@ class AuditEvent(TypedDict):
 class GuardrailVerdict(TypedDict):
     passed: bool
     violations: list[str]
+    warnings: list[str]  # shown to the human approver but don't block
+    retryable: bool  # False = the agent can't fix this (scanner down, no code produced)
+    decision: Literal["approve", "retry", "drop"]  # what the router will do
 
 
 class AgentState(TypedDict):
-    # --- ADDED to your schema: the ReAct loop's conversation history. ---
+    # --- Conversation history for the ReAct loop. ---
     # The agent and the tools talk to each other through messages: the LLM's replies
     # (including "please call this tool"), and the tool results. Without this field the
     # loop has no memory of what it already asked or learned.
     messages: Annotated[list[AnyMessage], add_messages]
 
-    # --- Your schema, unchanged ---
+    # --- Workflow fields ---
     user_request: str
     generated_hcl: str
     validation_result: dict

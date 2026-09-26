@@ -27,8 +27,8 @@ MAX_DISTANCE = 0.85
 
 # Rules that apply to EVERY request, whatever the wording. Similarity search is the wrong
 # tool for these: nobody phrases "create a bucket" like "allowed regions", so the regions
-# rule ranked 6th of 6 in testing (distance 0.847). We fetch them by id instead. They are
-# also the rules guardrail_check enforces, so the agent must always have seen them.
+# rule ranked last of six in a similarity search (distance 0.847). They are fetched by id
+# instead. They are also the rules guardrail_check enforces, so the agent must always see them.
 PINNED_STANDARDS = ["standard:tagging", "standard:regions", "standard:security-defaults"]
 
 
@@ -95,6 +95,6 @@ if __name__ == "__main__":
             dist = "pinned" if h["distance"] is None else f"{h['distance']:.3f}"
             print(f"   {dist:>6}  {h['id']}")
         print()
-    # .invoke() is how LangChain calls a tool, the same way ToolNode will later.
+    # .invoke() is how LangChain calls a tool, the same way ToolNode does.
     print("--- what the agent actually receives (first 400 chars) ---")
     print(retrieve_patterns.invoke({"query": "private S3 bucket for audit logs"})[:400])

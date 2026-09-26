@@ -1,14 +1,15 @@
 # policies.yaml — SINGLE SOURCE OF TRUTH for hard rules.
 #
-# WHY this file exists (agentic-AI concept: separating "soft" guidance from "hard" enforcement):
-#   - The agent READS these rules via RAG so it generates compliant Terraform the first time.
-#   - guardrail_check READS THE SAME FILE deterministically (plain Python, no LLM) to enforce them.
-#   The LLM may forget or misread a rule; the guardrail never does. One file = no drift between the two.
+# Why this file exists (soft guidance vs hard enforcement):
+#   - The agent sees these values through the standards chunks (the loader injects them at
+#     index time), so it can generate compliant Terraform the first time.
+#   - guardrail_check reads this same file directly (plain Python, no LLM) to enforce them.
+#   An LLM can forget or misread a rule; the guardrail cannot. One file means no drift between the two.
 
 version: 1
 
 allowed_regions:
-  - ap-south-1      # Mumbai  (your default)
+  - ap-south-1      # Mumbai (default)
   - eu-west-1       # Ireland
   - eu-central-1    # Frankfurt
   - eu-north-1      # Stockholm
@@ -30,7 +31,8 @@ cost_ceiling:
 
 # Free-tier eligibility matrix.
 # NOTE: AWS changed free-tier rules in July 2025 (credit-based plan for new accounts vs the
-# legacy 12-month tier). VERIFY these limits against your own account before trusting them.
+# legacy 12-month tier). Verify these limits against the current AWS free-tier terms for the
+# account in use.
 free_tier:
   ec2:
     allowed_instance_types: [t2.micro, t3.micro]
@@ -44,12 +46,19 @@ free_tier:
   nat_gateway: not_free_tier      # hourly charge — guardrail should flag it
   elastic_ip_unattached: not_free_tier
 
+# How the guardrail treats free-tier deviations.
+#   warn  = recorded in the verdict and shown to the human approver, does not block
+#   block = fails the guardrail like any other violation
+# (The cost ceiling below is the hard control; this matrix is advisory by default.)
+guardrail:
+  free_tier_violations: warn
+
 # Security scan risk acceptance (Checkov + Trivy).
 # Findings listed here are knowingly accepted: the scan tool hides them from the agent so
 # it doesn't pile on KMS keys, replication etc. that the request never asked for.
 # Every entry needs a reason. This is a governance record, so review it when policy changes.
-# NOTE: these ids come from the Checkov / Trivy checks that fire on the S3 template; confirm
-# against a real scan and edit. Trivy ids are compared without the "AVD-" prefix.
+# These ids are the Checkov / Trivy checks that fire on the S3 module template. Trivy ids are
+# compared without the "AVD-" prefix.
 security_scan:
   accepted_findings:
     - id: CKV_AWS_18

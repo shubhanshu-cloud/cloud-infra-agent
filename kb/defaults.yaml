@@ -1,0 +1,13 @@
+# Organisation defaults.
+#
+# The agent uses these when a request does not state a value. Keys match Terraform variable
+# names. The values below are placeholders: replace them with real ones before use.
+#
+# `environment` defaults to the lowest environment on purpose: a request that says nothing
+# never lands in prod by accident.
+defaults:
+  project: "infra-agent"
+  owner: "platform-team"
+  cost_center: "cc-0000"
+  environment: "dev"
+  region: "ap-south-1"

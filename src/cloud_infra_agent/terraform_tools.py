@@ -1,14 +1,14 @@
 """terraform_tools.py — tools that let the agent CHECK its own Terraform.
 
 WHY this tool exists (the point of ReAct):
-    In testing the agent wrote `variable "x" { type = string, default = "dev" }`, which is
-    invalid HCL, even though the prompt told it not to. Prompts are guidance, not
-    guarantees. A tool gives the agent an OBSERVATION: it writes code, runs validate,
-    reads the error, fixes the code and validates again. The loop corrects the agent's
-    mistakes instead of us hoping the first draft is right.
+    LLM-generated HCL can be syntactically invalid, for example a one-line block with two
+    arguments (`variable "x" { type = string, default = "dev" }`), even when the prompt
+    forbids it. Prompts are guidance, not guarantees. A tool gives the agent an
+    OBSERVATION: it writes code, runs validate, reads the error, fixes the code and
+    validates again. The loop corrects mistakes instead of relying on a perfect first draft.
 
-    This is the "deterministic check" idea again: terraform itself, not the LLM, decides
-    whether the code is valid.
+    This is a deterministic check: terraform itself, not the LLM, decides whether the code
+    is valid.
 """
 
 import json

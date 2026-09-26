@@ -3,7 +3,7 @@
 WHY two scanners: they have different rule sets and each catches things the other misses.
 Both are deterministic programs, so the verdict does not depend on what the LLM believes.
 
-Two design points worth knowing (and being able to explain):
+Two design points:
 
 1. FAIL CLOSED. If a scanner is missing, times out or crashes, the result is "SCAN
    INCOMPLETE", never "no findings". A silent scanner failure looks exactly like a clean

@@ -1,14 +1,14 @@
 """agent.py — the ReAct agent: an LLM in a loop with tools.
 
 WHY ReAct (agentic-AI concept: Reason + Act):
-    A fixed pipeline runs steps in an order YOU decided. A ReAct agent lets the LLM
+    A fixed pipeline runs steps in an order decided in advance. A ReAct agent lets the LLM
     decide the order:
         1. REASON  - the LLM reads the conversation and decides what to do next
         2. ACT     - it asks for a tool call (e.g. retrieve_patterns)
         3. OBSERVE - the tool's result is added to the conversation
         ...and it repeats until the LLM answers WITHOUT asking for a tool. That is "done".
 
-    Graph shape (this file builds exactly this):
+    Graph shape (graph.py builds it):
 
         START -> agent --(wants a tool?)--> tools --+
                    ^                                |
@@ -16,26 +16,26 @@ WHY ReAct (agentic-AI concept: Reason + Act):
                    |
                    +--(no tool call = finished)--> END
 
-    Today `tools` holds one tool. Later we add validate, security_scan, cost_estimate
-    to the same list and the loop needs no rewiring.
+    The tools list holds retrieve_patterns, validate_terraform, security_scan and
+    cost_estimate. Adding another tool needs no rewiring of the loop.
 """
 
 import re
 from datetime import datetime, timezone
 
+import yaml
 from dotenv import load_dotenv
 from langchain_core.messages import SystemMessage
 from langchain_openai import ChatOpenAI
-from langgraph.graph import END, START, StateGraph
-from langgraph.prebuilt import ToolNode
 
 from cloud_infra_agent.state import AgentState, AuditEvent
 from cloud_infra_agent.cost_tools import cost_estimate
+from cloud_infra_agent.loader import DEFAULT_KB_DIR
 from cloud_infra_agent.scan_tools import security_scan
 from cloud_infra_agent.terraform_tools import validate_terraform
 from cloud_infra_agent.tools import retrieve_patterns
 
-load_dotenv()  # reads OPENAI_API_KEY (and the rest) from your .env
+load_dotenv()  # load local environment configuration
 
 TOOLS = [retrieve_patterns, validate_terraform, security_scan, cost_estimate]
 
@@ -49,7 +49,7 @@ llm_with_tools = llm.bind_tools(TOOLS)
 
 # The system prompt is the agent's job description. It replaces the old parse_intent and
 # generate_terraform nodes: the LLM does both inside its own reasoning.
-SYSTEM_PROMPT = """You are a cloud infrastructure agent that turns plain-language requests \
+BASE_PROMPT = """You are a cloud infrastructure agent that turns plain-language requests \
 into Terraform for AWS.
 
 Workflow:
@@ -62,11 +62,11 @@ and the region allowlist.
 4. If the user asks for a region that is not allowed, do NOT generate code. Explain which \
 regions are allowed and stop.
 5. If retrieve_patterns finds nothing relevant, say so instead of guessing.
-6. For every value the user states (environment, region, purpose, project name and so on), \
-set it as that variable's `default` in the HCL. Example: "dev environment" means \
-`variable "environment" { type = string, default = "dev" }` written across multiple lines. \
-Values the user did NOT state (such as owner or cost_center) stay without a default; list \
-them at the end as values still needed.
+6. Every variable must end up with a `default`, because apply runs without prompting. Use \
+each value the user states (environment, region, purpose, project name and so on). For values \
+the user does not state, use the organisation defaults listed at the end of this prompt. \
+Write each variable as a multi-line block (a one-line block cannot hold both `type` and \
+`default`). In your final note, list which values came from organisation defaults.
 7. Before answering, call validate_terraform with the complete HCL. If it reports errors, \
 fix them and validate again. Give your final answer only once it reports VALID, or after \
 three failed attempts, in which case say exactly what is still failing.
@@ -80,6 +80,29 @@ requires the cost, say so plainly instead of silently changing what was asked.
 10. When finished, reply with the complete Terraform in a single ```hcl code block, \
 followed by a short note listing any assumptions, any values still needed, and the \
 estimated monthly cost in INR from cost_estimate."""
+
+
+def _load_defaults() -> dict:
+    """Organisation defaults from kb/defaults.yaml, overridden by kb/defaults.local.yaml when
+    present. The local file is git-ignored, so real values never have to be committed."""
+    merged: dict = {}
+    for name in ("defaults.yaml", "defaults.local.yaml"):
+        path = DEFAULT_KB_DIR / name
+        if path.exists():
+            merged.update((yaml.safe_load(path.read_text()) or {}).get("defaults") or {})
+    return merged
+
+
+def _defaults_section(defaults: dict) -> str:
+    if not defaults:
+        return ""
+    lines = "\n".join(f"- {name} = {value}" for name, value in defaults.items())
+    return f"\n\nOrganisation defaults (use when the request does not state the value):\n{lines}"
+
+
+# Injected as concrete values: a rule that only says "use the defaults file" gives the
+# model nothing to act on.
+SYSTEM_PROMPT = BASE_PROMPT + _defaults_section(_load_defaults())
 
 
 def extract_hcl(text: str) -> str:
@@ -120,45 +143,10 @@ def should_continue(state: AgentState) -> str:
     """The router: decides which edge to follow after the agent speaks.
 
     This is a CONDITIONAL EDGE. It reads the state and returns the name of the next
-    step. If the LLM asked for a tool, run it. If not, the agent has finished.
+    step. If the LLM asked for a tool, run it. If not, the agent believes it has finished,
+    and its work goes to the guardrail, which does not take its word for it.
     """
     last_message = state["messages"][-1]
     if last_message.tool_calls:
         return "tools"
-    return END
-
-
-def build_graph():
-    graph = StateGraph(AgentState)
-
-    graph.add_node("agent", agent_node)
-    # ToolNode is prebuilt: it looks at the LLM's tool-call request, runs the matching
-    # Python function, and appends the result to messages as a ToolMessage.
-    graph.add_node("tools", ToolNode(TOOLS))
-
-    graph.add_edge(START, "agent")
-    graph.add_conditional_edges("agent", should_continue, {"tools": "tools", END: END})
-    graph.add_edge("tools", "agent")  # the loop: after a tool runs, the agent sees the result
-
-    return graph.compile()
-
-
-if __name__ == "__main__":
-    # uv run python -m cloud_infra_agent.agent
-    app = build_graph()
-    request = "Create a private S3 bucket for audit logs in the dev environment, in eu-west-1."
-
-    # recursion_limit is a safety net: LangGraph aborts if the loop takes more than this
-    # many steps, so a confused agent can't spin forever.
-    result = app.invoke(
-        {"messages": [("user", request)], "user_request": request},
-        config={"recursion_limit": 25},  # room for: lookup, validate, scan, fixes, re-checks
-    )
-
-    print("=== Audit trail ===")
-    for e in result["audit_trail"]:
-        print(f"  {e['node']:<8} {e['event']:<20} {e['detail']}")
-    print("\n=== Final HCL ===")
-    print(result["generated_hcl"] or "(none extracted)")
-    print("\n=== Full final message ===")
-    print(result["messages"][-1].content)
+    return "guardrail_check"
