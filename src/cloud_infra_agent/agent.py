@@ -30,13 +30,14 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.prebuilt import ToolNode
 
 from cloud_infra_agent.state import AgentState, AuditEvent
+from cloud_infra_agent.cost_tools import cost_estimate
 from cloud_infra_agent.scan_tools import security_scan
 from cloud_infra_agent.terraform_tools import validate_terraform
 from cloud_infra_agent.tools import retrieve_patterns
 
 load_dotenv()  # reads OPENAI_API_KEY (and the rest) from your .env
 
-TOOLS = [retrieve_patterns, validate_terraform, security_scan]
+TOOLS = [retrieve_patterns, validate_terraform, security_scan, cost_estimate]
 
 # temperature=0: as deterministic as the model allows. For infrastructure code we want
 # the same request to produce the same answer, not creative variation.
@@ -73,8 +74,12 @@ three failed attempts, in which case say exactly what is still failing.
 adjusting existing resources, then validate and scan again. If a finding cannot be fixed \
 without adding cost or resources the user did not ask for, leave it and mention it in your \
 final note.
-9. When finished, reply with the complete Terraform in a single ```hcl code block, \
-followed by a short note listing any assumptions and any values still needed."""
+9. Then call cost_estimate with the complete HCL. If it reports OVER CEILING, choose a \
+cheaper configuration where the request allows it and re-check; if the request itself \
+requires the cost, say so plainly instead of silently changing what was asked.
+10. When finished, reply with the complete Terraform in a single ```hcl code block, \
+followed by a short note listing any assumptions, any values still needed, and the \
+estimated monthly cost in INR from cost_estimate."""
 
 
 def extract_hcl(text: str) -> str:
