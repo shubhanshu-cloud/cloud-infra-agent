@@ -1,0 +1,73 @@
+# policies.yaml — SINGLE SOURCE OF TRUTH for hard rules.
+#
+# WHY this file exists (agentic-AI concept: separating "soft" guidance from "hard" enforcement):
+#   - The agent READS these rules via RAG so it generates compliant Terraform the first time.
+#   - guardrail_check READS THE SAME FILE deterministically (plain Python, no LLM) to enforce them.
+#   The LLM may forget or misread a rule; the guardrail never does. One file = no drift between the two.
+
+version: 1
+
+allowed_regions:
+  - ap-south-1      # Mumbai  (your default)
+  - eu-west-1       # Ireland
+  - eu-central-1    # Frankfurt
+  - eu-north-1      # Stockholm
+
+mandatory_tags:
+  - Owner
+  - Environment     # one of: dev | staging | prod
+  - CostCenter
+  - Project
+  - ManagedBy       # always "terraform"
+
+allowed_environments: [dev, staging, prod]
+
+# Cost ceiling checked against the Infracost estimate.
+# Infracost reports USD; guardrail converts using usd_to_inr before comparing.
+cost_ceiling:
+  max_monthly_inr: 1000
+  usd_to_inr: 88          # update occasionally; only used for the comparison
+
+# Free-tier eligibility matrix.
+# NOTE: AWS changed free-tier rules in July 2025 (credit-based plan for new accounts vs the
+# legacy 12-month tier). VERIFY these limits against your own account before trusting them.
+free_tier:
+  ec2:
+    allowed_instance_types: [t2.micro, t3.micro]
+    max_instances: 1
+  rds:
+    allowed_instance_classes: [db.t3.micro, db.t4g.micro]
+    max_storage_gb: 20
+    multi_az: false
+  s3:
+    max_storage_gb: 5
+  nat_gateway: not_free_tier      # hourly charge — guardrail should flag it
+  elastic_ip_unattached: not_free_tier
+
+# Security scan risk acceptance (Checkov + Trivy).
+# Findings listed here are knowingly accepted: the scan tool hides them from the agent so
+# it doesn't pile on KMS keys, replication etc. that the request never asked for.
+# Every entry needs a reason. This is a governance record, so review it when policy changes.
+# NOTE: these ids come from the Checkov / Trivy checks that fire on the S3 template; confirm
+# against a real scan and edit. Trivy ids are compared without the "AVD-" prefix.
+security_scan:
+  accepted_findings:
+    - id: CKV_AWS_18
+      reason: "S3 access logging not required for dev; revisit for prod"
+    - id: CKV_AWS_144
+      reason: "Cross-region replication not required (cost)"
+    - id: CKV_AWS_145
+      reason: "SSE-KMS adds key cost; AES256 meets the encryption standard"
+    - id: CKV2_AWS_62
+      reason: "Event notifications not required"
+    - id: AWS-0089
+      reason: "Trivy: bucket logging (same as CKV_AWS_18)"
+    - id: AWS-0132
+      reason: "Trivy: customer-managed keys (same as CKV_AWS_145)"
+
+# Always-blocked patterns (guardrail hard-fails regardless of retries)
+forbidden:
+  - "0.0.0.0/0 on ports other than 80/443"
+  - "public S3 buckets"
+  - "IAM policies with Action: * and Resource: *"
+  - "unencrypted storage (S3, EBS, RDS)"
